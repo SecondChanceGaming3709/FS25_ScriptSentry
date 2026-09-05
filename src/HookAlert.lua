@@ -20,7 +20,7 @@ local HookAlert_mt = Class(HookAlert)
 local OWNER_GIANTS = "GIANTS base game"
 local OWNER_ENGINE = "engine/C++"
 local OWNER_UNKNOWN = "unknown provider"
-local SCRIPT_SENTRY_VERSION = "0.5.3.0"
+local SCRIPT_SENTRY_VERSION = "0.5.3.1"
 local MAX_PLAYER_ITEMS = 3
 
 local INFRASTRUCTURE_PATHS = {
@@ -842,7 +842,12 @@ function HookAlert:raiseUiIssue(detection)
     if self.summarySent and changed then
         self:buildReview(false)
         if isNew and issue.kind == "UI_CORRUPTION" then
-            self.hud:openReview(true, false)
+            -- A late GUI finding is usually discovered while the player is
+            -- using the affected menu. Opening an InfoDialog at that moment
+            -- is blocked by FS25, so openReview used to queue it and display
+            -- it as soon as the player closed the menu. Keep monitoring and
+            -- refresh the stored review, but leave opening it to RIGHT ALT+1.
+            self:log("New confirmed GUI problem saved - press RIGHT ALT + 1 to view the updated review")
         end
     end
 end
@@ -918,8 +923,8 @@ function HookAlert:buildReview(openNow)
     if confirmedCount > 0 then
         reviewKind = "OVERWRITE"
         reviewTitle = confirmedCount == 1
-            and "SCRIPT SENTRY 0.5.3.0 - PROBLEM FOUND"
-            or "SCRIPT SENTRY 0.5.3.0 - PROBLEMS FOUND"
+            and "SCRIPT SENTRY 0.5.3.1 - PROBLEM FOUND"
+            or "SCRIPT SENTRY 0.5.3.1 - PROBLEMS FOUND"
         summary = confirmedCount == 1
             and "1 confirmed problem was found."
             or string.format("%d confirmed problems were found.", confirmedCount)
@@ -933,12 +938,12 @@ function HookAlert:buildReview(openNow)
         end
     elseif limited then
         reviewKind = "INFO"
-        reviewTitle = "SCRIPT SENTRY 0.5.3.0 - CHECK COMPLETE"
+        reviewTitle = "SCRIPT SENTRY 0.5.3.1 - CHECK COMPLETE"
         summary = "No confirmed problem was found."
         detail = "Some mod ownership could not be verified. Technical notes are in log.txt."
     else
         reviewKind = "SAFE"
-        reviewTitle = "SCRIPT SENTRY 0.5.3.0 - CHECK COMPLETE"
+        reviewTitle = "SCRIPT SENTRY 0.5.3.1 - CHECK COMPLETE"
         summary = "No confirmed problem was found."
         detail = "No action is needed. Compatible shared scripts are not treated as conflicts."
     end

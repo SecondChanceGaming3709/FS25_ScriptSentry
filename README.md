@@ -4,7 +4,7 @@ Script Sentry is a read-only conflict, GUI-integrity, and frame-rate diagnostic 
 
 ## Current version
 
-**0.5.3.0**
+**0.5.3.1**
 
 ## What it does
 
@@ -25,6 +25,8 @@ Confirmed findings are explained with four lines:
 - **What to do** — the recommended player action.
 
 Speculative GUI risks, normal menu lifecycle changes, and compatible shared-script chains remain technical log notes and are not presented as confirmed conflicts.
+
+The review opens automatically once after the startup scan. GUI problems found later during play update the saved review and `log.txt` without opening a popup when the player closes a menu. Press **Right Alt + 1** whenever you want to see the updated review.
 
 ## Controls
 

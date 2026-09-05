@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8" standalone="no" ?>
 <modDesc descVersion="111">
     <author>Second Chance Gaming</author>
-    <version>0.5.3.0</version>
+    <version>0.5.3.1</version>
 
     <title>
         <en>Script Sentry</en>
@@ -27,7 +27,7 @@ Each confirmed problem is explained with four plain-language lines:
 Internal control paths, callback names, raw evidence, compatible chains, and
 uncertain observations remain in log.txt for mod authors. The dialog shows one
 confirmed problem per page and never exceeds three pages. Its title includes
-version 0.5.3.0 so players can verify that the hotfix actually loaded.
+version 0.5.3.1 so players can verify that the hotfix actually loaded.
 
 The confidence-first GUI monitor still catches strong evidence such as mapped
 settings choices being replaced by OFF/ON or YES/NO, persistent invalid states, broken
@@ -43,6 +43,10 @@ The review remains visible until the player presses SPACE. When closed, it
 leaves no badge, icon, or message on the gameplay HUD. Press RIGHT ALT + 1 at any time to
 view it again. Reviews are split into clearly numbered pages; close the current
 page with SPACE and press RIGHT ALT + 1 for the next one.
+
+New GUI findings discovered during play update the saved review and log without
+opening a dialog when the player closes a menu. Use RIGHT ALT + 1 when you want
+to view those later findings.
 
 At startup, Script Sentry honors the shared diagnostic-dialog handoff used by
 Know Your Limits. Know Your Limits can show and close its one-page startup notice

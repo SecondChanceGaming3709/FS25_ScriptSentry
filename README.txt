@@ -1,4 +1,4 @@
-SCRIPT SENTRY 0.5.3.0 — GUI LIFECYCLE HOTFIX + CLEAR PLAYER REVIEW
+SCRIPT SENTRY 0.5.3.1 — MENU POPUP HOTFIX
 ==============================================================
 
 Script Sentry is a passive diagnostic mod for Farming Simulator 25. It reviews
@@ -80,6 +80,7 @@ THE REVIEW DIALOG
 - Adds no persistent gameplay badge or help-HUD line
 - Waits for Know Your Limits to finish its startup notice before opening
 - Continues monitoring after the startup dialog has closed
+- Saves later GUI findings silently instead of opening when another menu closes
 
 THE SAFE FPS CHECK
 ------------------
@@ -126,6 +127,15 @@ RIGHT ALT + 1  Open/cycle the startup and GUI-integrity review
 RIGHT ALT + 2  Run a safe 15-second FPS/stutter check
 
 Both diagnostic actions can be remapped through FS25's normal controls menu.
+
+VERSION 0.5.3.1
+---------------
+
+- Fixed the review dialog automatically appearing after the player closed a
+  normal game menu.
+- GUI problems found during play still update the review and log, but the
+  player chooses when to view them with RIGHT ALT + 1.
+- The single automatic startup review is unchanged.
 
 VERSION 0.5.3.0
 ---------------
