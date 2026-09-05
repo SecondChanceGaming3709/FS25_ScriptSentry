@@ -91,7 +91,7 @@ end
 function HookAlertHud:setReview(kind, title, summary, detail, items)
     self.review = {
         kind = kind or "INFO",
-        title = title or "SCRIPT SENTRY 0.5.3.1 - CHECK COMPLETE",
+        title = title or "SCRIPT SENTRY 0.5.4.0 - CHECK COMPLETE",
         summary = summary or "",
         detail = detail or "",
         items = copyItems(items)
@@ -208,7 +208,7 @@ function HookAlertHud:openReview(resetToFirstPage, startupSequence)
     if self.review == nil then
         self:setReview(
             "INFO",
-            "SCRIPT SENTRY 0.5.3.1 - SCAN IN PROGRESS",
+            "SCRIPT SENTRY 0.5.4.0 - SCAN IN PROGRESS",
             "The startup review is not ready yet.",
             "It will open automatically when the scan finishes.",
             {}

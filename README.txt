@@ -1,8 +1,9 @@
-SCRIPT SENTRY 0.5.3.1 — MENU POPUP HOTFIX
+SCRIPT SENTRY 0.5.4.0 — SPECIALIZATION CONFLICT MONITOR
 ==============================================================
 
 Script Sentry is a passive diagnostic mod for Farming Simulator 25. It reviews
-live Lua function chains, monitors loaded GUI screens for observable integrity
+live Lua function chains, watches mod-registered vehicle and placeable
+specialization routes, monitors loaded GUI screens for observable integrity
 problems, and provides an optional safe 15-second FPS/stutter check.
 
 It never repairs, disables, reorders, or edits another mod. Findings remain in
@@ -21,6 +22,39 @@ CONFIRMED PROBLEM
 The player dialog does not show speculative GUI risks, normal menu lifecycle
 activity, compatible shared-script chains, callback names, or internal control
 paths. Those technical observations remain available in log.txt for mod authors.
+
+SCRIPT AND SPECIALIZATION MONITOR
+---------------------------------
+
+Version 0.5.4 closes the registry blind spot which prevented Script Sentry from
+seeing many conflicts involving Follow Me and other vehicle features. FS25 keeps
+these callbacks inside type-function and event-listener registries rather than
+ordinary global tables.
+
+During mod loading, Script Sentry now passively records:
+- Mod specialization class functions when GIANTS loads the specialization
+- Functions added through SpecializationUtil.registerFunction
+- Chains built through SpecializationUtil.registerOverwrittenFunction
+- Specialization event listeners, including onDraw, onUpdateTick, and
+  onRegisterActionEvents
+
+It then verifies that registered functions, specialization callbacks, and event
+listeners remain connected. A later mod which directly replaces a Follow Me
+function without continuing the prior code can now be named as the writer. A
+proper super-function chain remains a technical shared-chain note and is not
+falsely called a conflict.
+
+For Follow Me specifically, the player report now explains when the affected
+route is the vehicle-selection line rather than displaying callback names. A
+direct replacement or an observed call to GIANTS' listener-removal helper can
+name the later mod. If a mod edits the listener table directly and leaves no
+attributable code behind, Script Sentry reports the confirmed removal but states
+honestly that the responsible mod could not be identified.
+
+The observers forward the exact original callback objects, arguments, and return
+values. They are removed after startup and never become part of vehicle gameplay
+callbacks. Low-frequency read-only checks continue during play so a later direct
+replacement can still be detected.
 
 GENERAL GUI INTEGRITY MONITOR
 -----------------------------
@@ -127,6 +161,26 @@ RIGHT ALT + 1  Open/cycle the startup and GUI-integrity review
 RIGHT ALT + 2  Run a safe 15-second FPS/stutter check
 
 Both diagnostic actions can be remapped through FS25's normal controls menu.
+
+VERSION 0.5.4.0
+---------------
+
+- Added passive monitoring for mod specialization classes, registered type
+  functions, overwritten specialization chains, and event listeners.
+- Fixed the major blind spot that prevented Script Sentry from seeing many
+  Follow Me-style vehicle callback replacements.
+- A destructive replacement now reports the later writer and the displaced mod
+  when ownership can be verified.
+- Intact super-function chains are still recorded only as compatible technical
+  notes; sharing a callback does not by itself prove a conflict.
+- Added low-frequency runtime rescans for tracked script and specialization
+  functions without wrapping gameplay callbacks.
+- Added regression simulations for a destructive Follow Me replacement and a
+  correctly chained compatible extension.
+- Added exact no-line regressions for a replaced drawNearbyVehicles function
+  and a removed onDraw event listener.
+- Added plain-language reporting for the missing Follow Me vehicle-selection
+  line, including an honest unknown-mod result when no writer remains to inspect.
 
 VERSION 0.5.3.1
 ---------------

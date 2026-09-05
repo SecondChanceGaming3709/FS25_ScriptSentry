@@ -4,11 +4,12 @@ Script Sentry is a read-only conflict, GUI-integrity, and frame-rate diagnostic 
 
 ## Current version
 
-**0.5.3.1**
+**0.5.4.0**
 
 ## What it does
 
 - Detects confirmed Lua overwrites that prevent an earlier mod's code from continuing.
+- Monitors mod specialization classes, registered vehicle/placeable type functions, and event listeners.
 - Monitors loaded GUI screens for persistent, high-confidence structural and data faults.
 - Detects semantic settings choices being incorrectly replaced by generic **OFF/ON** or **YES/NO** values.
 - Learns normal dynamic menu population and complete GUI-layer replacements to reduce false positives.
@@ -25,6 +26,8 @@ Confirmed findings are explained with four lines:
 - **What to do** — the recommended player action.
 
 Speculative GUI risks, normal menu lifecycle changes, and compatible shared-script chains remain technical log notes and are not presented as confirmed conflicts.
+
+Version 0.5.4.0 closes the specialization-registry blind spot that kept earlier builds from seeing many Follow Me-style conflicts. It specifically monitors the `onDraw`, `onUpdateTick`, action-registration, and registered type-function routes used by vehicle specializations. When Follow Me's selection-line route is damaged, the player report explains the visible result in plain language. A direct replacement can name the later mod; a silent listener removal is reported without inventing an owner.
 
 The review opens automatically once after the startup scan. GUI problems found later during play update the saved review and `log.txt` without opening a popup when the player closes a menu. Press **Right Alt + 1** whenever you want to see the updated review.
 

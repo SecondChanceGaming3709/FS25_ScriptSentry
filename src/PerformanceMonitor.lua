@@ -15,7 +15,7 @@
 PerformanceMonitor = {}
 local PerformanceMonitor_mt = Class(PerformanceMonitor)
 
-local SCRIPT_SENTRY_VERSION = "0.5.3.1"
+local SCRIPT_SENTRY_VERSION = "0.5.4.0"
 local SCAN_DURATION_MS = 15000
 local SLOW_FRAME_MS = 1000 / 30
 local SEVERE_FRAME_MS = 50

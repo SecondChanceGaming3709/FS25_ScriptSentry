@@ -10,7 +10,9 @@
 -- unchanged to the original helper. It restores those helpers after the startup
 -- scan finishes.
 -- It never resolves, reorders, mutes, persists, or exposes a conflict-management
--- interface. Version 0.5.3 also provides a safe, on-demand frame-rate check
+-- interface. Version 0.5.4 also observes mod specialization registration and
+-- the resulting type-function slots without wrapping any gameplay callback.
+-- Version 0.5.3 also provides a safe, on-demand frame-rate check
 -- which does not insert Script Sentry into gameplay callback chains.
 --
 
@@ -20,8 +22,14 @@ local HookAlert_mt = Class(HookAlert)
 local OWNER_GIANTS = "GIANTS base game"
 local OWNER_ENGINE = "engine/C++"
 local OWNER_UNKNOWN = "unknown provider"
-local SCRIPT_SENTRY_VERSION = "0.5.3.1"
+local OWNER_UNKNOWN_REMOVER = "unknown remover"
+local SCRIPT_SENTRY_VERSION = "0.5.4.0"
 local MAX_PLAYER_ITEMS = 3
+local unpackValues = unpack or table.unpack
+
+local function packValues(...)
+    return {n = select("#", ...), ...}
+end
 
 local INFRASTRUCTURE_PATHS = {
     ["source"] = true,
@@ -34,6 +42,7 @@ local INFRASTRUCTURE_PATHS = {
     ["GuiElement.exposeControlsAsFields"] = true,
     ["SpecializationManager.addSpecialization"] = true,
     ["SpecializationUtil.registerEventListener"] = true,
+    ["SpecializationUtil.removeEventListener"] = true,
     ["SpecializationUtil.registerFunction"] = true,
     ["SpecializationUtil.registerOverwrittenFunction"] = true
 }
@@ -65,6 +74,7 @@ local function isMod(owner)
         and owner ~= OWNER_GIANTS
         and owner ~= OWNER_ENGINE
         and owner ~= OWNER_UNKNOWN
+        and owner ~= OWNER_UNKNOWN_REMOVER
 end
 
 local function count(values)
@@ -103,6 +113,7 @@ function HookAlert.new(modDirectory, modName, customMt)
     self.runtimeMs = 0
     self.scanAccumulator = 0
     self.scanInterval = 1500
+    self.runtimeScanInterval = 5000
     self.uiScanAccumulator = 0
     self.uiScanInterval = 1500
     self.summarySent = false
@@ -117,6 +128,15 @@ function HookAlert.new(modDirectory, modName, customMt)
     self.wrapperRecords = {}
     self.wrapperOrder = {}
     self.wrapperSequence = 0
+    self.objectTypeLabels = {}
+    self.objectTypeSequence = 0
+    self.typeFunctionRecords = {}
+    self.typeFunctionOrder = {}
+    self.eventListenerRecords = {}
+    self.eventListenerOrder = {}
+    self.specializationSnapshots = {}
+    self.specializationSnapshotOrder = {}
+    self.specializationFunctionOwners = {}
     self.observedHelpers = {}
     self.helpersRestored = false
     self.missionReady = false
@@ -271,8 +291,15 @@ function HookAlert:getUiMutationOwner()
 end
 
 function HookAlert:getObservedOwner(hookFunc)
+    local capturedOwner = self.specializationFunctionOwners[hookFunc]
+    if isMod(capturedOwner) and capturedOwner ~= self.modName then
+        return capturedOwner
+    end
     local owner = self:getFunctionOwner(hookFunc)
     if isMod(owner) and owner ~= self.modName then
+        return owner
+    end
+    if owner == OWNER_GIANTS or owner == OWNER_ENGINE then
         return owner
     end
     if isMod(self.currentLoadOwner) and self.currentLoadOwner ~= self.modName then
@@ -305,6 +332,284 @@ function HookAlert:recordWrapper(kind, wrappedFunc, previousFunc, hookFunc, obse
     end
 end
 
+function HookAlert:getObjectTypeLabel(objectType)
+    local label = self.objectTypeLabels[objectType]
+    if label ~= nil then
+        return label
+    end
+
+    self.objectTypeSequence = self.objectTypeSequence + 1
+    local typeName = type(objectType) == "table"
+        and (objectType.name or objectType.typeName)
+        or nil
+    label = string.format(
+        "$objectType[%s#%d]",
+        tostring(typeName or "unnamed"),
+        self.objectTypeSequence
+    )
+    self.objectTypeLabels[objectType] = label
+    return label
+end
+
+function HookAlert:getTypeFunctionPath(objectType, functionName)
+    return self:getObjectTypeLabel(objectType)
+        .. ".functions."
+        .. tostring(functionName or "unknown")
+end
+
+function HookAlert:getEventListenerPath(objectType, eventName, owner)
+    return self:getObjectTypeLabel(objectType)
+        .. ".eventListeners."
+        .. tostring(eventName or "unknown")
+        .. "."
+        .. tostring(owner or OWNER_UNKNOWN)
+end
+
+function HookAlert:hasEventListener(objectType, eventName, spec)
+    local listeners = type(objectType) == "table"
+        and type(objectType.eventListeners) == "table"
+        and objectType.eventListeners[eventName]
+        or nil
+    if type(listeners) ~= "table" then
+        return false
+    end
+    for _, registeredSpec in pairs(listeners) do
+        if registeredSpec == spec then
+            return true
+        end
+    end
+    return false
+end
+
+function HookAlert:recordTypeFunctionRegistration(objectType, functionName, hookFunc, beforeFunc, afterFunc, owner)
+    if type(objectType) ~= "table"
+        or type(objectType.functions) ~= "table"
+        or type(afterFunc) ~= "function" then
+        return
+    end
+
+    local resolvedOwner = owner
+    if not isMod(resolvedOwner) then
+        resolvedOwner = self.specializationFunctionOwners[hookFunc]
+            or self.specializationFunctionOwners[afterFunc]
+            or self:getFunctionOwner(hookFunc or afterFunc)
+    end
+
+    local path = self:getTypeFunctionPath(objectType, functionName)
+    -- GIANTS registers thousands of base type functions through the same
+    -- helper. Keep only mod-owned registrations (or a slot already being
+    -- followed) so the passive audit remains small and actionable.
+    if self.typeFunctionRecords[path] == nil and not isMod(resolvedOwner) then
+        return
+    end
+
+    if self.typeFunctionRecords[path] == nil then
+        self.typeFunctionRecords[path] = {
+            path = path,
+            objectType = objectType,
+            functionName = functionName
+        }
+        table.insert(self.typeFunctionOrder, self.typeFunctionRecords[path])
+    end
+
+    local priorSnapshot = self.snapshot[path]
+    if type(priorSnapshot) == "function"
+        and type(beforeFunc) == "function"
+        and priorSnapshot ~= beforeFunc then
+        self:inspectTransition(path, priorSnapshot, beforeFunc)
+    elseif priorSnapshot == nil and type(beforeFunc) == "function" then
+        self.snapshot[path] = beforeFunc
+        self.ownerBySlot[path] = self:getFunctionOwner(beforeFunc)
+        self.participantsBySlot[path] = self:analyzeStandaloneChain(beforeFunc)
+    end
+
+    if type(beforeFunc) == "function" and afterFunc ~= beforeFunc then
+        self:inspectTransition(path, beforeFunc, afterFunc)
+    end
+
+    local participants = self:analyzeStandaloneChain(afterFunc)
+    if isMod(resolvedOwner) then
+        participants[resolvedOwner] = true
+        self.ownerBySlot[path] = resolvedOwner
+        self.ownerAttributionObserved = true
+    elseif self.ownerBySlot[path] == nil then
+        self.ownerBySlot[path] = self:getFunctionOwner(afterFunc)
+    end
+    self.participantsBySlot[path] = participants
+    self.snapshot[path] = afterFunc
+
+    if count(participants) >= 2 then
+        self:raiseIssue("OVERLAP", path, resolvedOwner, OWNER_UNKNOWN, participants)
+    end
+end
+
+function HookAlert:captureSpecializationClass(name, className, filename, classObject, owner)
+    if type(classObject) ~= "table" or self.specializationSnapshots[classObject] ~= nil then
+        return
+    end
+
+    local resolvedOwner = isMod(owner) and owner or self:getModNameFromPath(filename)
+    if not isMod(resolvedOwner) then
+        return
+    end
+    local functions = {}
+    local owners = {}
+    for functionName, func in pairs(classObject) do
+        if type(functionName) == "string" and type(func) == "function" then
+            functions[functionName] = func
+            local functionOwner = self:getFunctionOwner(func)
+            owners[functionName] = isMod(functionOwner) and functionOwner or resolvedOwner
+            if isMod(owners[functionName]) then
+                self.specializationFunctionOwners[func] = owners[functionName]
+            end
+        end
+    end
+    if next(functions) == nil then
+        return
+    end
+
+    local label = tostring(name or className or "specialization")
+    if isMod(resolvedOwner) and string.find(label, resolvedOwner, 1, true) == nil then
+        label = resolvedOwner .. "." .. label
+    end
+    local snapshot = {
+        label = label,
+        classObject = classObject,
+        owner = resolvedOwner or OWNER_UNKNOWN,
+        functions = functions,
+        owners = owners
+    }
+    self.specializationSnapshots[classObject] = snapshot
+    table.insert(self.specializationSnapshotOrder, snapshot)
+    self.ownerAttributionObserved = true
+    self:log(
+        "Specialization observed: %s from %s (%d callbacks)",
+        label,
+        resolvedOwner,
+        count(functions)
+    )
+end
+
+function HookAlert:recordEventListenerRegistration(objectType, eventName, spec, owner)
+    if type(objectType) ~= "table" or type(spec) ~= "table" then
+        return
+    end
+    if not self:hasEventListener(objectType, eventName, spec) then
+        return
+    end
+    local expectedFunc = spec[eventName]
+    if type(expectedFunc) ~= "function" then
+        return
+    end
+
+    local captured = self.specializationSnapshots[spec]
+    local resolvedOwner = captured ~= nil and captured.owner or owner
+    if not isMod(resolvedOwner) then
+        resolvedOwner = self.specializationFunctionOwners[expectedFunc]
+            or self:getFunctionOwner(expectedFunc)
+    end
+    if not isMod(resolvedOwner) then
+        return
+    end
+    local path = self:getEventListenerPath(objectType, eventName, resolvedOwner)
+    local key = path .. "|" .. tostring(spec)
+    local record = self.eventListenerRecords[key]
+    if record == nil then
+        record = {
+            path = path,
+            objectType = objectType,
+            eventName = eventName,
+            spec = spec,
+            expectedFunc = expectedFunc,
+            owner = resolvedOwner or OWNER_UNKNOWN,
+            removedBy = nil,
+            missingScans = 0
+        }
+        self.eventListenerRecords[key] = record
+        table.insert(self.eventListenerOrder, record)
+    else
+        record.expectedFunc = expectedFunc
+        record.owner = resolvedOwner
+        record.removedBy = nil
+        record.missingScans = 0
+    end
+
+    self:captureSpecializationClass(
+        resolvedOwner or "specialization",
+        rawget(spec, "className"),
+        nil,
+        spec,
+        resolvedOwner
+    )
+end
+
+function HookAlert:recordEventListenerRemoval(objectType, eventName, spec, owner, wasRegistered, isRegistered)
+    if not wasRegistered or isRegistered then
+        return
+    end
+
+    local resolvedOwner = isMod(owner) and owner or OWNER_UNKNOWN_REMOVER
+    for _, record in ipairs(self.eventListenerOrder) do
+        if record.objectType == objectType
+            and record.eventName == eventName
+            and record.spec == spec then
+            record.removedBy = resolvedOwner
+            record.missingScans = 0
+        end
+    end
+end
+
+function HookAlert:auditSpecializationClasses()
+    for _, snapshot in ipairs(self.specializationSnapshotOrder) do
+        for functionName, expectedFunc in pairs(snapshot.functions) do
+            local currentFunc = rawget(snapshot.classObject, functionName)
+            local path = "$specialization[" .. snapshot.label .. "]." .. functionName
+            if currentFunc == nil then
+                self:raiseIssue("OVERWRITE", path, OWNER_UNKNOWN_REMOVER, snapshot.owners[functionName] or snapshot.owner, nil)
+            elseif type(currentFunc) == "function" and currentFunc ~= expectedFunc then
+                self.ownerBySlot[path] = snapshot.owners[functionName] or snapshot.owner
+                self.participantsBySlot[path] = self:analyzeStandaloneChain(expectedFunc)
+                self:inspectTransition(path, expectedFunc, currentFunc)
+                snapshot.functions[functionName] = currentFunc
+                snapshot.owners[functionName] = self.ownerBySlot[path] or self:getFunctionOwner(currentFunc)
+                if isMod(snapshot.owners[functionName]) then
+                    self.specializationFunctionOwners[currentFunc] = snapshot.owners[functionName]
+                end
+            end
+        end
+
+        for functionName, currentFunc in pairs(snapshot.classObject) do
+            if type(functionName) == "string"
+                and type(currentFunc) == "function"
+                and snapshot.functions[functionName] == nil then
+                snapshot.functions[functionName] = currentFunc
+                local currentOwner = self:getFunctionOwner(currentFunc)
+                snapshot.owners[functionName] = isMod(currentOwner) and currentOwner or snapshot.owner
+                if isMod(snapshot.owners[functionName]) then
+                    self.specializationFunctionOwners[currentFunc] = snapshot.owners[functionName]
+                end
+            end
+        end
+    end
+end
+
+function HookAlert:auditEventListeners()
+    for _, record in ipairs(self.eventListenerOrder) do
+        local found = self:hasEventListener(record.objectType, record.eventName, record.spec)
+
+        if not found then
+            record.missingScans = (record.missingScans or 0) + 1
+            local remover = record.removedBy or OWNER_UNKNOWN_REMOVER
+            if record.missingScans >= 2 and remover ~= record.owner then
+                self:raiseIssue("OVERWRITE", record.path, remover, record.owner, nil)
+            end
+        else
+            record.removedBy = nil
+            record.missingScans = 0
+        end
+    end
+end
+
 
 function HookAlert:observeHelper(container, key, factory)
     if type(container) ~= "table" or type(container[key]) ~= "function" then
@@ -324,40 +629,133 @@ function HookAlert:observeHelper(container, key, factory)
 end
 
 function HookAlert:installHelperObservation()
-    if type(Utils) ~= "table" then
-        return
-    end
-
     local observer = self
-    self:observeHelper(Utils, "getFilename", function(original)
-        return function(filename, baseDirectory, ...)
-            observer:observeModDirectory(baseDirectory)
-            return original(filename, baseDirectory, ...)
-        end
-    end)
-
     local observedCount = 0
-    local helperKinds = {
-        appendedFunction = "APPEND",
-        prependedFunction = "PREPEND",
-        overwrittenFunction = "OVERWRITE"
-    }
-    for key, kind in pairs(helperKinds) do
-        local observedKind = kind
-        if self:observeHelper(Utils, key, function(original)
-            return function(previousFunc, hookFunc, ...)
-                local owner = observer:getObservedOwner(hookFunc)
-                -- Observe construction metadata only. Passing the exact hook
-                -- object through is the compatibility boundary: Script Sentry
-                -- must never become part of the resulting gameplay chain.
-                local wrappedFunc = original(previousFunc, hookFunc, ...)
-                observer:recordWrapper(observedKind, wrappedFunc, previousFunc, hookFunc, owner)
-                return wrappedFunc
+
+    if type(Utils) == "table" then
+        self:observeHelper(Utils, "getFilename", function(original)
+            return function(filename, baseDirectory, ...)
+                observer:observeModDirectory(baseDirectory)
+                return original(filename, baseDirectory, ...)
             end
-        end) then
-            observedCount = observedCount + 1
+        end)
+
+        local helperKinds = {
+            appendedFunction = "APPEND",
+            prependedFunction = "PREPEND",
+            overwrittenFunction = "OVERWRITE"
+        }
+        for key, kind in pairs(helperKinds) do
+            local observedKind = kind
+            if self:observeHelper(Utils, key, function(original)
+                return function(previousFunc, hookFunc, ...)
+                    local owner = observer:getObservedOwner(hookFunc)
+                    -- Observe construction metadata only. Passing the exact hook
+                    -- object through is the compatibility boundary: Script Sentry
+                    -- must never become part of the resulting gameplay chain.
+                    local wrappedFunc = original(previousFunc, hookFunc, ...)
+                    observer:recordWrapper(observedKind, wrappedFunc, previousFunc, hookFunc, owner)
+                    return wrappedFunc
+                end
+            end) then
+                observedCount = observedCount + 1
+            end
         end
     end
+
+    if type(SpecializationUtil) == "table" then
+        for _, key in ipairs({"registerFunction", "registerOverwrittenFunction"}) do
+            local observedKey = key
+            self:observeHelper(SpecializationUtil, observedKey, function(original)
+                return function(objectType, functionName, hookFunc, ...)
+                    local beforeFunc = type(objectType) == "table"
+                        and type(objectType.functions) == "table"
+                        and objectType.functions[functionName]
+                        or nil
+                    local owner = observer:getObservedOwner(hookFunc)
+                    local results = packValues(original(objectType, functionName, hookFunc, ...))
+                    local afterFunc = type(objectType) == "table"
+                        and type(objectType.functions) == "table"
+                        and objectType.functions[functionName]
+                        or nil
+                    observer:recordTypeFunctionRegistration(
+                        objectType,
+                        functionName,
+                        hookFunc,
+                        beforeFunc,
+                        afterFunc,
+                        owner
+                    )
+                    return unpackValues(results, 1, results.n)
+                end
+            end)
+        end
+
+        self:observeHelper(SpecializationUtil, "registerEventListener", function(original)
+            return function(objectType, eventName, spec, ...)
+                local eventFunc = type(spec) == "table" and spec[eventName] or nil
+                local owner = observer:getObservedOwner(eventFunc)
+                local results = packValues(original(objectType, eventName, spec, ...))
+                observer:recordEventListenerRegistration(objectType, eventName, spec, owner)
+                return unpackValues(results, 1, results.n)
+            end
+        end)
+
+        self:observeHelper(SpecializationUtil, "removeEventListener", function(original)
+            return function(objectType, eventName, spec, ...)
+                local wasRegistered = observer:hasEventListener(objectType, eventName, spec)
+                local owner = observer:getObservedOwner(nil)
+                local results = packValues(original(objectType, eventName, spec, ...))
+                local isRegistered = observer:hasEventListener(objectType, eventName, spec)
+                observer:recordEventListenerRemoval(
+                    objectType,
+                    eventName,
+                    spec,
+                    owner,
+                    wasRegistered,
+                    isRegistered
+                )
+                return unpackValues(results, 1, results.n)
+            end
+        end)
+    end
+
+    if type(SpecializationManager) == "table" then
+        self:observeHelper(SpecializationManager, "addSpecialization", function(original)
+            return function(manager, name, className, filename, customEnvironment, ...)
+                local owner = observer:getModNameFromPath(filename)
+                local results = packValues(original(
+                    manager,
+                    name,
+                    className,
+                    filename,
+                    customEnvironment,
+                    ...
+                ))
+                local classObject = nil
+                if type(manager) == "table"
+                    and type(manager.getSpecializationObjectByName) == "function" then
+                    local ok, value = pcall(manager.getSpecializationObjectByName, manager, name)
+                    if ok then
+                        classObject = value
+                    end
+                end
+                if classObject == nil
+                    and type(ClassUtil) == "table"
+                    and type(ClassUtil.getClassObject) == "function" then
+                    local ok, value = pcall(ClassUtil.getClassObject, className)
+                    if ok then
+                        classObject = value
+                    end
+                end
+                if results[1] ~= false then
+                    observer:captureSpecializationClass(name, className, filename, classObject, owner)
+                end
+                return unpackValues(results, 1, results.n)
+            end
+        end)
+    end
+
     self.canObserveWrappers = observedCount > 0
 end
 
@@ -656,6 +1054,16 @@ function HookAlert:addObjectFunctions(slots, label, object)
     end
 end
 
+function HookAlert:addTrackedTypeFunctions(slots)
+    for _, record in ipairs(self.typeFunctionOrder) do
+        local functions = type(record.objectType) == "table" and record.objectType.functions or nil
+        local func = type(functions) == "table" and functions[record.functionName] or nil
+        if type(func) == "function" then
+            slots[record.path] = func
+        end
+    end
+end
+
 function HookAlert:collectSlots()
     local slots = {}
     for globalName, value in pairs(_G) do
@@ -674,7 +1082,30 @@ function HookAlert:collectSlots()
         self:addObjectFunctions(slots, "$mission.environment", g_currentMission.environment)
         self:addObjectFunctions(slots, "$mission.aiSystem", g_currentMission.aiSystem)
     end
+    self:addTrackedTypeFunctions(slots)
     return slots
+end
+
+function HookAlert:isInfrastructurePath(path)
+    if INFRASTRUCTURE_PATHS[path] then
+        return true
+    end
+    return string.match(tostring(path), "^g_[%w_]*SpecializationManager%.addSpecialization$") ~= nil
+end
+
+function HookAlert:getIssueKeyPath(path)
+    local normalized = tostring(path or "unknown")
+    normalized = string.gsub(
+        normalized,
+        "^%$objectType%b[]%.functions%.",
+        "$objectType.functions."
+    )
+    normalized = string.gsub(
+        normalized,
+        "^%$objectType%b[]%.eventListeners%.",
+        "$objectType.eventListeners."
+    )
+    return normalized
 end
 
 function HookAlert:scanSlots()
@@ -683,9 +1114,9 @@ function HookAlert:scanSlots()
     for path, oldFunc in pairs(self.snapshot) do
         local newFunc = current[path]
         if newFunc == nil then
-            if not INFRASTRUCTURE_PATHS[path] then
+            if not self:isInfrastructurePath(path) then
                 local oldOwner = self.ownerBySlot[path] or self:getFunctionOwner(oldFunc)
-                self:raiseIssue("OVERWRITE", path, "unknown remover", oldOwner, nil)
+                self:raiseIssue("OVERWRITE", path, OWNER_UNKNOWN_REMOVER, oldOwner, nil)
             end
             self.ownerBySlot[path] = nil
             self.participantsBySlot[path] = nil
@@ -700,7 +1131,7 @@ function HookAlert:scanSlots()
             local newOwner = self:getFunctionOwner(newFunc)
             self.ownerBySlot[path] = newOwner
             self.participantsBySlot[path] = participants
-            if count(participants) >= 2 and not INFRASTRUCTURE_PATHS[path] then
+            if count(participants) >= 2 and not self:isInfrastructurePath(path) then
                 self:raiseIssue("OVERLAP", path, newOwner, OWNER_UNKNOWN, participants)
             end
         end
@@ -709,7 +1140,7 @@ function HookAlert:scanSlots()
 end
 
 function HookAlert:inspectTransition(path, oldFunc, newFunc)
-    if INFRASTRUCTURE_PATHS[path] then
+    if self:isInfrastructurePath(path) then
         return
     end
 
@@ -754,11 +1185,12 @@ function HookAlert:raiseIssue(kind, path, writer, displaced, participants)
     writer = writer or OWNER_UNKNOWN
     displaced = displaced or OWNER_UNKNOWN
     local participantText = participants ~= nil and joinedNames(participants) or ""
+    local issueKeyPath = self:getIssueKeyPath(path)
     local key
     if kind == "OVERLAP" then
-        key = table.concat({kind, path, participantText}, "|")
+        key = table.concat({kind, issueKeyPath, participantText}, "|")
     else
-        key = table.concat({kind, path, writer, displaced}, "|")
+        key = table.concat({kind, issueKeyPath, writer, displaced}, "|")
     end
 
     local issue = self.issues[key]
@@ -854,12 +1286,34 @@ end
 
 function HookAlert:getReviewItem(issue)
     if issue.kind == "OVERWRITE" then
+        local knownWriter = isMod(issue.writer)
+        local affectsFollowMe = string.find(
+            string.lower(tostring(issue.displaced or "") .. " " .. tostring(issue.path or "")),
+            "followme",
+            1,
+            true
+        ) ~= nil
+        local normalizedPath = string.lower(tostring(issue.path or ""))
+        local affectsFollowMeSelection = affectsFollowMe
+            and (string.find(normalizedPath, "ondraw", 1, true) ~= nil
+                or string.find(normalizedPath, "drawnearbyvehicles", 1, true) ~= nil
+                or string.find(normalizedPath, "findvehiclesnearby", 1, true) ~= nil
+                or string.find(normalizedPath, "actioneventinitiate", 1, true) ~= nil
+                or string.find(normalizedPath, "onupdatetick", 1, true) ~= nil)
         return {
             kind = "OVERWRITE",
-            primary = "Mod: " .. issue.writer,
-            secondary = "Problem: stopped code from " .. issue.displaced .. " from continuing",
-            evidence = "Affects: a shared game function used by both mods",
-            advice = "What to do: update or disable " .. issue.writer .. ", then reload the save."
+            primary = "Mod: " .. (knownWriter and issue.writer or "could not be identified"),
+            secondary = affectsFollowMeSelection
+                and "Problem: stopped Follow Me's vehicle-selection line from appearing"
+                or ("Problem: replaced " .. issue.displaced .. " code without continuing it"),
+            evidence = affectsFollowMeSelection
+                and "Affects: choosing a lead vehicle with Follow Me"
+                or affectsFollowMe
+                and "Affects: Follow Me controls and vehicle AI"
+                or "Affects: a shared game function used by both mods",
+            advice = knownWriter
+                and ("What to do: update or disable " .. issue.writer .. ", then reload the save.")
+                or "What to do: send log.txt; Script Sentry saw the removal but could not name the mod."
         }
     end
     if issue.kind == "UI_CORRUPTION" then
@@ -923,8 +1377,8 @@ function HookAlert:buildReview(openNow)
     if confirmedCount > 0 then
         reviewKind = "OVERWRITE"
         reviewTitle = confirmedCount == 1
-            and "SCRIPT SENTRY 0.5.3.1 - PROBLEM FOUND"
-            or "SCRIPT SENTRY 0.5.3.1 - PROBLEMS FOUND"
+            and "SCRIPT SENTRY 0.5.4.0 - PROBLEM FOUND"
+            or "SCRIPT SENTRY 0.5.4.0 - PROBLEMS FOUND"
         summary = confirmedCount == 1
             and "1 confirmed problem was found."
             or string.format("%d confirmed problems were found.", confirmedCount)
@@ -938,12 +1392,12 @@ function HookAlert:buildReview(openNow)
         end
     elseif limited then
         reviewKind = "INFO"
-        reviewTitle = "SCRIPT SENTRY 0.5.3.1 - CHECK COMPLETE"
+        reviewTitle = "SCRIPT SENTRY 0.5.4.0 - CHECK COMPLETE"
         summary = "No confirmed problem was found."
         detail = "Some mod ownership could not be verified. Technical notes are in log.txt."
     else
         reviewKind = "SAFE"
-        reviewTitle = "SCRIPT SENTRY 0.5.3.1 - CHECK COMPLETE"
+        reviewTitle = "SCRIPT SENTRY 0.5.4.0 - CHECK COMPLETE"
         summary = "No confirmed problem was found."
         detail = "No action is needed. Compatible shared scripts are not treated as conflicts."
     end
@@ -1135,15 +1589,26 @@ function HookAlert:update(dt)
         self.uiIntegrity:scan()
     end
 
-    if not self.summarySent and self.scanAccumulator >= self.scanInterval then
+    local activeScanInterval = self.summarySent and self.runtimeScanInterval or self.scanInterval
+    if self.scanAccumulator >= activeScanInterval then
         self.scanAccumulator = 0
         self:scanSlots()
+        self:auditSpecializationClasses()
+        self:auditEventListeners()
     end
 
     if not self.summarySent and self.runtimeMs >= self.summaryDelay then
         self:restoreHelperObservation()
         self:scanSlots()
+        self:auditSpecializationClasses()
+        self:auditEventListeners()
         self.uiIntegrity:scan()
+        self:log(
+            "Specialization audit coverage: classes=%d typeFunctions=%d eventListeners=%d",
+            #self.specializationSnapshotOrder,
+            #self.typeFunctionOrder,
+            #self.eventListenerOrder
+        )
         self.summarySent = true
         self:queueSummary()
     end

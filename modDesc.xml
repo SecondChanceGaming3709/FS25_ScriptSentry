@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8" standalone="no" ?>
 <modDesc descVersion="111">
     <author>Second Chance Gaming</author>
-    <version>0.5.3.1</version>
+    <version>0.5.4.0</version>
 
     <title>
         <en>Script Sentry</en>
@@ -12,9 +12,10 @@
 Script Sentry is a read-only conflict, GUI-integrity, and frame-rate
 diagnostic utility for Farming Simulator 25.
 
-It watches for mods that replace the same live Lua function and monitors loaded
-GUI screens for persistent, high-confidence faults. The player report shows only
-confirmed problems. Normal menu population, dynamic option-list changes,
+It watches for mods that replace the same live Lua function, verifies functions
+and event listeners registered in FS25 specialization/type registries, and
+monitors loaded GUI screens for persistent, high-confidence faults. The player
+report shows only confirmed problems. Normal menu population, dynamic option-list changes,
 controller rebinding, settings-map reconstruction, speculative GUI risks, and
 compatible shared-script chains are never presented as conflicts.
 
@@ -27,7 +28,7 @@ Each confirmed problem is explained with four plain-language lines:
 Internal control paths, callback names, raw evidence, compatible chains, and
 uncertain observations remain in log.txt for mod authors. The dialog shows one
 confirmed problem per page and never exceeds three pages. Its title includes
-version 0.5.3.1 so players can verify that the hotfix actually loaded.
+version 0.5.4.0 so players can verify that the specialization patch actually loaded.
 
 The confidence-first GUI monitor still catches strong evidence such as mapped
 settings choices being replaced by OFF/ON or YES/NO, persistent invalid states, broken
@@ -38,6 +39,19 @@ of being reported as corrupt.
 Version 0.5.3 also recognizes when a GUI overhaul retires and replaces a complete
 screen layer during normal startup. The replacement becomes the new structural
 baseline, while isolated removed controls that remain in use are still reported.
+
+Version 0.5.4 adds the missing specialization-registry coverage required for
+mods such as Follow Me. Script Sentry records mod specialization classes,
+registered type functions, overwritten-function chains, and event listeners,
+then verifies that they remain connected. A later mod which replaces Follow Me
+code without continuing it can now be named when FS25 exposes reliable ownership.
+Proper super-function chains remain compatible technical notes rather than false
+conflict reports.
+
+If Follow Me's lead-vehicle selection line is stopped by a damaged registered
+function or event listener, the report describes that visible symptom directly.
+When no responsible owner remains in the Lua data, it says the mod could not be
+identified instead of guessing.
 
 The review remains visible until the player presses SPACE. When closed, it
 leaves no badge, icon, or message on the gameplay HUD. Press RIGHT ALT + 1 at any time to
@@ -66,9 +80,10 @@ and removes that compatibility risk.
 
 Script Sentry has no settings, profiles, resolution tools, telemetry, or saved
 database. Its dialogs and log evidence remain local and informational. During
-mod initialization it temporarily observes GIANTS' official registration and
-wrapper-construction helpers, always passing the exact original mod hook into
-the game. Persistent lightweight GUI observers forward all calls unchanged.
+mod initialization it temporarily observes GIANTS' official specialization,
+function, event-listener, and wrapper-construction helpers, always passing the
+exact original mod hook into the game. Persistent lightweight GUI observers
+forward all calls unchanged.
 Script Sentry never replaces source(), changes a watched
 gameplay function, repairs GUI data, changes another mod, picks a winner,
 reorders scripts, parks a mod, or captures generic log errors.

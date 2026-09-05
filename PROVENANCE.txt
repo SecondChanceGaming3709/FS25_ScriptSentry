@@ -1,7 +1,7 @@
 SCRIPT SENTRY — INDEPENDENT SCOPE RECORD
 =====================================
 
-Implementation record date: 2026-09-04
+Implementation record date: 2026-09-05
 
 Purpose: automatic, read-only startup review of observed Lua function overlap
 or replacement, general integrity checking of discoverable GUI element trees,
@@ -14,6 +14,7 @@ Public technical basis:
 - Utils.overwrittenFunction
 - SpecializationUtil.registerOverwrittenFunction
 - SpecializationUtil.registerEventListener
+- SpecializationUtil.removeEventListener
 - SpecializationManager.addSpecialization
 - Frame delta timing supplied to Script Sentry's own update callback
 - Gui.showInfoDialog and FS25's modal menu input context
@@ -26,7 +27,8 @@ Public technical basis:
 
 Implementation boundary:
 - Passive before/after function-identity snapshots
-- Temporary observation of GIANTS wrapper constructors during mod loading
+- Temporary observation of GIANTS wrapper constructors, specialization loading,
+  registered type functions, and specialization event listeners during mod loading
 - Each observed helper call is forwarded unchanged to the original helper
 - Helper functions are restored after the startup scan when still owned by Script Sentry
 - GUI baselines preserve element identity, hierarchy, option data, callbacks,
@@ -51,6 +53,13 @@ Implementation boundary:
   specialization callbacks
 - The exact hook function received by a GIANTS wrapper constructor is passed to
   the original constructor unchanged
+- Mod-owned specialization class methods and registered type-function slots are
+  checked for later identity replacement without invoking those callbacks
+- Registered specialization event listeners, including Follow Me's onDraw and
+  onUpdateTick routes, are checked for removal; their specialization callback
+  identities are checked separately without invoking either route
+- Low-frequency identity rescans continue during play for routes learned safely
+  during startup
 - The 15-second FPS check observes only frame delta values received by Script
   Sentry itself and does not attribute the result to an individual mod
 - Results are session-only and informational
