@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8" standalone="no" ?>
+<modDesc descVersion="111">
+    <author>Second Chance Gaming</author>
+    <version>0.5.3.0</version>
+
+    <title>
+        <en>Script Sentry</en>
+    </title>
+
+    <description>
+        <en><![CDATA[
+Script Sentry is a read-only conflict, GUI-integrity, and frame-rate
+diagnostic utility for Farming Simulator 25.
+
+It watches for mods that replace the same live Lua function and monitors loaded
+GUI screens for persistent, high-confidence faults. The player report shows only
+confirmed problems. Normal menu population, dynamic option-list changes,
+controller rebinding, settings-map reconstruction, speculative GUI risks, and
+compatible shared-script chains are never presented as conflicts.
+
+Each confirmed problem is explained with four plain-language lines:
+- Mod: the responsible mod, when it can be identified reliably
+- Problem: what the mod broke
+- Affects: the visible menu or controls involved
+- What to do: the recommended player action
+
+Internal control paths, callback names, raw evidence, compatible chains, and
+uncertain observations remain in log.txt for mod authors. The dialog shows one
+confirmed problem per page and never exceeds three pages. Its title includes
+version 0.5.3.0 so players can verify that the hotfix actually loaded.
+
+The confidence-first GUI monitor still catches strong evidence such as mapped
+settings choices being replaced by OFF/ON or YES/NO, persistent invalid states, broken
+mod-owned callbacks/layout data, invalid geometry, and detached controls which
+remain in use. Screens and selectors which initialize empty are learned instead
+of being reported as corrupt.
+
+Version 0.5.3 also recognizes when a GUI overhaul retires and replaces a complete
+screen layer during normal startup. The replacement becomes the new structural
+baseline, while isolated removed controls that remain in use are still reported.
+
+The review remains visible until the player presses SPACE. When closed, it
+leaves no badge, icon, or message on the gameplay HUD. Press RIGHT ALT + 1 at any time to
+view it again. Reviews are split into clearly numbered pages; close the current
+page with SPACE and press RIGHT ALT + 1 for the next one.
+
+At startup, Script Sentry honors the shared diagnostic-dialog handoff used by
+Know Your Limits. Know Your Limits can show and close its one-page startup notice
+first; Script Sentry then opens its review without either mod replacing the
+other mod's text or callback. This coordination applies only to automatic startup
+dialogs and does not change either mod's on-demand controls.
+
+Press RIGHT ALT + 2 while the slowdown is happening to run a safe 15-second FPS
+check. It reports average FPS, the slowest frame, whether low-FPS frames or
+stutters were captured, and a plain-language next step. It does not name a mod.
+
+Version 0.5.2 removes the earlier per-mod callback profiler. That profiler placed
+timing wrappers inside other mods' live gameplay chains even when no sample was
+running. Script Sentry now leaves gameplay hooks, event listeners, and
+specialization callbacks exactly unchanged. This avoids misleading error stacks
+and removes that compatibility risk.
+
+Script Sentry has no settings, profiles, resolution tools, telemetry, or saved
+database. Its dialogs and log evidence remain local and informational. During
+mod initialization it temporarily observes GIANTS' official registration and
+wrapper-construction helpers, always passing the exact original mod hook into
+the game. Persistent lightweight GUI observers forward all calls unchanged.
+Script Sentry never replaces source(), changes a watched
+gameplay function, repairs GUI data, changes another mod, picks a winner,
+reorders scripts, parks a mod, or captures generic log errors.
+
+The GUI monitor detects observable structural and data-integrity faults. It
+cannot judge artistic quality, intended colors/spacing, every custom renderer,
+or whether technically valid behavior matches a mod author's intent.
+
+It adds two remappable actions: Script Sentry: Open startup review, assigned to
+RIGHT ALT + 1, and Script Sentry: Run safe 15-second FPS check, assigned to RIGHT ALT + 2.
+SPACE is not added as another binding; each dialog uses FS25's existing
+MENU_ACTIVATE action while the game is in its modal menu context. Script Sentry
+never edits inputBinding.xml or changes an existing binding.
+
+PC/Mac script mod. Singleplayer diagnostic preview.
+        ]]></en>
+    </description>
+
+    <iconFilename>icon.dds</iconFilename>
+    <multiplayer supported="false" />
+
+    <l10n filenamePrefix="translations/l10n" />
+
+    <actions>
+        <action name="SCRIPT_SENTRY_REVIEW" category="VEHICLE" />
+        <action name="SCRIPT_SENTRY_PERFORMANCE" category="VEHICLE" />
+    </actions>
+
+    <inputBinding>
+        <actionBinding action="SCRIPT_SENTRY_REVIEW">
+            <binding device="KB_MOUSE_DEFAULT" input="KEY_ralt KEY_1" />
+        </actionBinding>
+        <actionBinding action="SCRIPT_SENTRY_PERFORMANCE">
+            <binding device="KB_MOUSE_DEFAULT" input="KEY_ralt KEY_2" />
+        </actionBinding>
+    </inputBinding>
+
+    <extraSourceFiles>
+        <sourceFile filename="src/register.lua" />
+    </extraSourceFiles>
+</modDesc>

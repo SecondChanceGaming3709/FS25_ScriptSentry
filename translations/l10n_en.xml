@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8" standalone="no" ?>
+<l10n>
+    <translationContributors>Second Chance Gaming</translationContributors>
+    <texts>
+        <text name="input_SCRIPT_SENTRY_REVIEW" text="Script Sentry: Open startup review" />
+        <text name="input_SCRIPT_SENTRY_PERFORMANCE" text="Script Sentry: Run safe 15-second FPS check" />
+    </texts>
+</l10n>

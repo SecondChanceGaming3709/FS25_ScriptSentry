@@ -1,0 +1,77 @@
+SCRIPT SENTRY — INDEPENDENT SCOPE RECORD
+=====================================
+
+Implementation record date: 2026-09-04
+
+Purpose: automatic, read-only startup review of observed Lua function overlap
+or replacement, general integrity checking of discoverable GUI element trees,
+plus an on-demand safe frame-rate and stutter check in Farming Simulator 25.
+
+Public technical basis:
+- GIANTS Developer Network FS25 Lua documentation
+- Utils.appendedFunction
+- Utils.prependedFunction
+- Utils.overwrittenFunction
+- SpecializationUtil.registerOverwrittenFunction
+- SpecializationUtil.registerEventListener
+- SpecializationManager.addSpecialization
+- Frame delta timing supplied to Script Sentry's own update callback
+- Gui.showInfoDialog and FS25's modal menu input context
+- InputBinding.registerActionEvent for two remappable diagnostic actions
+- MultiTextOptionElement.setTexts
+- GuiElement.clone
+- GuiElement.exposeControlsAsFields
+- GuiElement add/remove and setup lifecycle methods when available
+- Gui.loadGuiRec ownership observation when available
+
+Implementation boundary:
+- Passive before/after function-identity snapshots
+- Temporary observation of GIANTS wrapper constructors during mod loading
+- Each observed helper call is forwarded unchanged to the original helper
+- Helper functions are restored after the startup scan when still owned by Script Sentry
+- GUI baselines preserve element identity, hierarchy, option data, callbacks,
+  and controller/mapping references needed to identify dangling controls
+- Discoverable GUI roots are scanned for structural, option-state, callback,
+  localization, duplicate-ID, parent-link, and invalid-geometry faults
+- Mod-loaded and cloned element ownership is tracked separately from base GUI
+- Risky whole-screen setup calls are separated from confirmed persistent damage
+- Transient findings are confirmed on a later scan before being reported
+- Dynamic controller-field and settings-map reconstruction is not treated as
+  corruption by identity alone
+- Empty selector initialization and dynamic non-binary option repopulation are
+  treated as normal GUI lifecycle activity
+- Wholesale GUI-layer replacement is learned as a new structural baseline;
+  isolated removed controls with live references remain protected
+- Only confirmed faults are player-facing; speculative GUI notes and intact
+  wrapper chains remain in log.txt
+- The native review shows one plain-language finding per page, capped at three,
+  while all technical evidence stays in log.txt
+- Detected UI data is reported but never repaired
+- No performance wrappers are installed around mod hooks, event listeners, or
+  specialization callbacks
+- The exact hook function received by a GIANTS wrapper constructor is passed to
+  the original constructor unchanged
+- The 15-second FPS check observes only frame delta values received by Script
+  Sentry itself and does not attribute the result to an individual mod
+- Results are session-only and informational
+- No replacement of source(), watched target functions, or input functions
+- No inputBinding.xml edits and no replacement of existing key assignments
+- SPACE is supplied by the existing MENU_ACTIVATE action only inside the dialog
+- Automatic startup dialogs honor the shared diagnostic-review owner field used
+  by Know Your Limits, then wait briefly before taking ownership of the native
+  dialog; this coordination does not affect on-demand menus
+
+Explicit exclusions:
+- No third-party source code or decompilation
+- No third-party code, assets, UI, terminology, or settings
+- No conflict resolution, winner selection, load-order management, safe mode,
+  recovery, mod parking, or mod-management features
+- No error/warning interception, commands, generated report, or mod-management
+  health database
+- No claim to attribute rendering, VRAM, model, texture, shader, map-object, or
+  engine-side physics cost to an individual mod
+
+Script Sentry observes identity changes, classifies recorded GIANTS wrapper
+continuity, checks observable GUI element-tree integrity, and measures overall
+frame timing during a bounded check. It never turns a finding into an automatic
+repair, disable, or removal decision.
